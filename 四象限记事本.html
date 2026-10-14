@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>四象限记事本</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Microsoft YaHei", sans-serif; display: flex; height: 100vh; background: #f4f5f7; color: #333; }
+  /* 左侧任务栏 */
+  #sidebar { width: 220px; background: #2c3e50; color: #fff; padding: 20px 14px; display: flex; flex-direction: column; gap: 12px; }
+  #sidebar h1 { font-size: 20px; text-align: center; margin-bottom: 10px; }
+  #sidebar button { padding: 11px; border: none; border-radius: 6px; font-size: 15px; cursor: pointer; background: #34495e; color: #fff; text-align: left; transition: background .2s; }
+  #sidebar button:hover { background: #4a6785; }
+  #sidebar button.active { background: #c0392b; }
+  #sidebar .tip { margin-top: auto; font-size: 12px; color: #aab; line-height: 1.6; }
+  /* 四象限区域 */
+  #main { flex: 1; position: relative; padding: 36px; }
+  #grid { position: relative; width: 100%; height: 100%; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 16px; }
+  .quad { border-radius: 10px; padding: 12px 14px; overflow-y: auto; }
+  .quad h2 { font-size: 16px; margin-bottom: 8px; }
+  #q-nu { background: #fff4e0; }  /* 左上：不重要紧急 */
+  #q-iu { background: #fde2e2; }  /* 右上：重要紧急 */
+  #q-nn { background: #ececec; }  /* 左下：不重要不紧急 */
+  #q-in { background: #e0f0ff; }  /* 右下：重要不紧急 */
+  /* 坐标轴 */
+  .axis { position: absolute; background: #2c3e50; z-index: 5; pointer-events: none; }
+  #axis-x { left: -24px; right: -24px; top: 50%; height: 3px; transform: translateY(-50%); }
+  #axis-y { top: -24px; bottom: -24px; left: 50%; width: 3px; transform: translateX(-50%); }
+  #axis-x::after { content: ""; position: absolute; right: -10px; top: -6px; border-left: 12px solid #2c3e50; border-top: 7.5px solid transparent; border-bottom: 7.5px solid transparent; }
+  #axis-y::after { content: ""; position: absolute; top: -10px; left: -6px; border-bottom: 12px solid #2c3e50; border-left: 7.5px solid transparent; border-right: 7.5px solid transparent; }
+  .axis-label { position: absolute; font-weight: bold; font-size: 15px; color: #2c3e50; z-index: 6; background: #f4f5f7; padding: 0 4px; }
+  #lbl-right { right: -32px; top: calc(50% + 6px); }
+  #lbl-left { left: -32px; top: calc(50% + 6px); }
+  #lbl-top { top: -30px; left: calc(50% + 10px); }
+  #lbl-bottom { bottom: -30px; left: calc(50% + 10px); }
+  /* 卡片 */
+  .card { background: #fff; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.12); cursor: pointer; display: flex; gap: 8px; align-items: flex-start; }
+  .card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+  .card .body { flex: 1; min-width: 0; }
+  .card .desc { font-weight: bold; word-break: break-all; }
+  .card .meta { font-size: 12px; color: #666; margin-top: 3px; }
+  .card .left { color: #27ae60; }
+  .card .overdue { color: #e74c3c; font-weight: bold; }
+  .card .bell { font-size: 12px; }
+  .card input[type=checkbox] { margin-top: 4px; width: 16px; height: 16px; display: none; }
+  body.delete-mode .card input[type=checkbox] { display: block; }
+  .empty { color: #999; font-size: 13px; }
+  /* 删除模式提示条 */
+  #delbar { display: none; position: absolute; top: 4px; left: 50%; transform: translateX(-50%); background: #c0392b; color: #fff; padding: 6px 14px; border-radius: 6px; z-index: 20; font-size: 14px; }
+  #delbar button { margin-left: 8px; padding: 3px 10px; border: none; border-radius: 4px; cursor: pointer; }
+  body.delete-mode #delbar { display: block; }
+  /* 弹窗 */
+  .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; align-items: center; justify-content: center; }
+  .modal-bg.show { display: flex; }
+  .modal { background: #fff; border-radius: 10px; padding: 22px 26px; width: 520px; max-height: 86vh; overflow-y: auto; }
+  .modal h3 { margin-bottom: 14px; }
+  .modal label { display: block; margin: 10px 0 4px; font-size: 14px; font-weight: bold; }
+  .modal input[type=text], .modal input[type=datetime-local], .modal textarea { width: 100%; padding: 7px; border: 1px solid #ccc; border-radius: 5px; font-size: 14px; font-family: inherit; }
+  .modal textarea { height: 70px; resize: vertical; }
+  .modal .radios { display: flex; gap: 18px; font-size: 14px; }
+  .modal .radios label { display: inline; font-weight: normal; margin: 0; }
+  .modal .actions { margin-top: 18px; text-align: right; }
+  .modal .actions button { padding: 7px 18px; margin-left: 8px; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; }
+  .btn-primary { background: #2980b9; color: #fff; }
+  .btn-gray { background: #ddd; }
+  .dt { display: flex; align-items: center; gap: 3px; font-size: 14px; flex-wrap: wrap; }
+  .dt select { padding: 5px 2px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+  .remind-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .remind-row .done { font-size: 12px; color: #999; }
+  .rm-del { border: none; background: #e74c3c; color: #fff; border-radius: 4px; padding: 3px 8px; cursor: pointer; }
+  .btn-small { border: 1px dashed #2980b9; background: #fff; color: #2980b9; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 13px; }
+  #remain-preview { margin-top: 6px; font-size: 13px; color: #27ae60; }
+  .theory p, .theory li { line-height: 1.8; font-size: 14px; }
+  .theory ul { padding-left: 20px; margin: 6px 0; }
+  .theory h4 { margin: 12px 0 4px; }
+  #todo-content h4 { margin: 12px 0 4px; }
+  #todo-content ol { padding-left: 22px; font-size: 14px; line-height: 1.8; }
+  .pick-item { padding: 8px 10px; border: 1px solid #ddd; border-radius: 5px; margin-bottom: 6px; cursor: pointer; font-size: 14px; }
+  .pick-item:hover { background: #eef6ff; border-color: #2980b9; }
+  .detail-row { margin: 6px 0; font-size: 14px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h1>📝 四象限记事本</h1>
+  <button id="btn-add">➕ 增加事项</button>
+  <button id="btn-del">➖ 减少事项</button>
+  <button id="btn-edit">✏️ 修改事项</button>
+  <button id="btn-todo">📋 生成 To Do List</button>
+  <button id="btn-sort">🔀 排序：输入顺序</button>
+  <button id="btn-theory">📖 分类方法理论</button>
+  <div class="tip">提示：点击事项卡片可查看详情、修改事件。<br>提醒功能需保持本页面打开。</div>
+</div>
+
+<div id="main">
+  <div id="delbar">勾选要删除的事项
+    <button id="del-confirm">删除所选</button><button id="del-cancel">取消</button>
+  </div>
+  <div id="grid">
+    <div class="quad" id="q-nu"><h2>🟠 不重要 · 紧急</h2><div class="list"></div></div>
+    <div class="quad" id="q-iu"><h2>🔴 重要 · 紧急</h2><div class="list"></div></div>
+    <div class="quad" id="q-nn"><h2>⚪ 不重要 · 不紧急</h2><div class="list"></div></div>
+    <div class="quad" id="q-in"><h2>🔵 重要 · 不紧急</h2><div class="list"></div></div>
+    <div class="axis" id="axis-x"></div>
+    <div class="axis" id="axis-y"></div>
+    <span class="axis-label" id="lbl-right">重要</span>
+    <span class="axis-label" id="lbl-left">不重要</span>
+    <span class="axis-label" id="lbl-top">紧急</span>
+    <span class="axis-label" id="lbl-bottom">不紧急</span>
+  </div>
+</div>
+
+<!-- 增加事项 -->
+<div class="modal-bg" id="m-add"><div class="modal">
+  <h3 id="f-title">➕ 增加事项</h3>
+  <label>事件描述 *</label><input type="text" id="f-desc" placeholder="要做什么？">
+  <label>截止日期 *</label><div class="dt" id="f-deadline"></div>
+  <div id="remain-preview"></div>
+  <label>重要性</label>
+  <div class="radios"><label><input type="radio" name="imp" value="1" checked> 重要</label><label><input type="radio" name="imp" value="0"> 不重要</label></div>
+  <label>紧急性</label>
+  <div class="radios"><label><input type="radio" name="urg" value="1" checked> 紧急</label><label><input type="radio" name="urg" value="0"> 不紧急</label></div>
+  <label>提醒时间（可选，可添加多个）</label>
+  <div id="f-reminds"></div>
+  <button class="btn-small" id="f-add-remind" type="button">＋ 添加提醒</button>
+  <label>备注</label><textarea id="f-note"></textarea>
+  <div class="actions"><button class="btn-gray" data-close>取消</button><button class="btn-primary" id="f-save">保存</button></div>
+</div></div>
+
+<!-- 详情 -->
+<div class="modal-bg" id="m-detail"><div class="modal">
+  <h3 id="d-title"></h3>
+  <div id="d-body"></div>
+  <div class="actions"><button class="btn-gray" data-close>关闭</button><button class="btn-primary" id="d-edit">✏️ 修改事件</button></div>
+</div></div>
+
+<!-- 选择要修改的事项 -->
+<div class="modal-bg" id="m-pick"><div class="modal">
+  <h3>✏️ 选择要修改的事项</h3>
+  <div id="pick-list"></div>
+  <div class="actions"><button class="btn-gray" data-close>取消</button></div>
+</div></div>
+
+<!-- To Do List -->
+<div class="modal-bg" id="m-todo"><div class="modal">
+  <h3>📋 To Do List</h3>
+  <div id="todo-content"></div>
+  <div class="actions"><button class="btn-gray" id="todo-copy">复制文本</button><button class="btn-gray" id="todo-print">打印</button><button class="btn-primary" data-close>关闭</button></div>
+</div></div>
+
+<!-- 理论 -->
+<div class="modal-bg" id="m-theory"><div class="modal theory">
+  <h3>📖 艾森豪威尔矩阵（四象限时间管理法）</h3>
+  <h4>一、出处</h4>
+  <p>该方法源于美国第 34 任总统<b>德怀特·D·艾森豪威尔</b>（Dwight D. Eisenhower）。他在 1954 年于美国西北大学的演讲中引用一位大学校长的话：</p>
+  <p><i>"I have two kinds of problems, the urgent and the important. The urgent are not important, and the important are never urgent."</i><br>（我有两类问题：紧急的和重要的。紧急的往往不重要，而重要的从来都不紧急。）</p>
+  <p>后来，<b>史蒂芬·柯维</b>（Stephen R. Covey）在其著作<b>《高效能人士的七个习惯》</b>（<i>The 7 Habits of Highly Effective People</i>，1989）中的"习惯三：要事第一"，以及《要事第一》（<i>First Things First</i>，1994）中，将其系统化为"时间管理矩阵"，使之广为流传。</p>
+  <h4>二、两个维度</h4>
+  <ul>
+    <li><b>重要性</b>：与你的长期目标、价值观、职责相关，结果影响深远。</li>
+    <li><b>紧急性</b>：需要立即处理，有迫近的截止时间，常常是被动的。</li>
+  </ul>
+  <h4>三、四个象限及处理策略</h4>
+  <ul>
+    <li>🔴 <b>重要且紧急（第一象限）</b>——<b>立即做</b>：危机、临近截止的项目、突发问题。</li>
+    <li>🔵 <b>重要不紧急（第二象限）</b>——<b>计划做</b>：学习成长、长期规划、锻炼健康、人际关系。柯维认为这是高效能人士应投入最多精力的区域。</li>
+    <li>🟠 <b>不重要但紧急（第三象限）</b>——<b>授权做 / 尽量少做</b>：某些电话、会议、他人的临时请求。</li>
+    <li>⚪ <b>不重要不紧急（第四象限）</b>——<b>不做 / 删除</b>：无意义的刷手机、闲聊、消遣过度。</li>
+  </ul>
+  <h4>四、核心思想</h4>
+  <p>多花时间在"重要不紧急"的事情上，提前规划，就能减少"重要且紧急"的危机，从而主动掌控时间，而非被紧急事务牵着走。</p>
+  <div class="actions"><button class="btn-primary" data-close>我知道了</button></div>
+</div></div>
+
+<script>
+const STORE = 'eisenhower_tasks', SORT_KEY = 'eisenhower_sort';
+let tasks = JSON.parse(localStorage.getItem(STORE) || '[]');
+let sortMode = localStorage.getItem(SORT_KEY) || 'input'; // input | deadline
+let currentId = null, editingId = null;
+// 兼容旧数据：单个提醒 remindAt -> 多个提醒 reminders
+tasks.forEach(t => {
+  if (!t.reminders) t.reminders = t.remindAt ? [{ at: t.remindAt, done: !!t.reminded }] : [];
+  delete t.remindAt; delete t.reminded;
+});
+
+const $ = s => document.querySelector(s);
+const save = () => localStorage.setItem(STORE, JSON.stringify(tasks));
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad = n => String(n).padStart(2, '0');
+const fmt = t => { const d = new Date(t);
+  return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const toStr = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+// 年/月/日/时/分 下拉选择器；box.getValue() 返回 "YYYY-MM-DDTHH:MM"
+function makePicker(box, value, onChange) {
+  const d = new Date(value), y0 = new Date().getFullYear();
+  const yStart = Math.min(y0 - 1, d.getFullYear()), yEnd = Math.max(y0 + 10, d.getFullYear());
+  const opts = (a, b, sel) => Array.from({ length: b - a + 1 }, (_, i) => a + i)
+    .map(n => `<option value="${n}"${n === sel ? ' selected' : ''}>${pad(n)}</option>`).join('');
+  box.innerHTML = `<select class="y">${opts(yStart, yEnd, d.getFullYear())}</select>年`
+    + `<select class="mo">${opts(1, 12, d.getMonth() + 1)}</select>月<select class="d"></select>日 `
+    + `<select class="h">${opts(0, 23, d.getHours())}</select>时<select class="mi">${opts(0, 59, d.getMinutes())}</select>分`;
+  const q = c => box.querySelector('.' + c);
+  const fillDays = sel => { const n = new Date(+q('y').value, +q('mo').value, 0).getDate(); q('d').innerHTML = opts(1, n, Math.min(sel, n)); };
+  fillDays(d.getDate());
+  box.onchange = e => { if (e.target.matches('.y, .mo')) fillDays(+q('d').value); if (onChange) onChange(); };
+  box.getValue = () => toStr(new Date(+q('y').value, q('mo').value - 1, +q('d').value, +q('h').value, +q('mi').value));
+}
+
+function remain(deadline) {
+  let ms = new Date(deadline) - Date.now();
+  const over = ms < 0; ms = Math.abs(ms);
+  const d = Math.floor(ms / 864e5), h = Math.floor(ms % 864e5 / 36e5), m = Math.floor(ms % 36e5 / 6e4);
+  const txt = (d ? d + '天' : '') + (d || h ? h + '小时' : '') + m + '分';
+  return { over, text: over ? '已逾期 ' + txt : '剩余 ' + txt };
+}
+
+const QUADS = [
+  { key: 'iu', imp: true,  urg: true,  name: '重要且紧急（立即做）' },
+  { key: 'in', imp: true,  urg: false, name: '重要不紧急（计划做）' },
+  { key: 'nu', imp: false, urg: true,  name: '不重要紧急（授权做）' },
+  { key: 'nn', imp: false, urg: false, name: '不重要不紧急（尽量不做）' },
+];
+const byDeadline = (a, b) => new Date(a.deadline) - new Date(b.deadline);
+const byInput = (a, b) => a.createdAt - b.createdAt;
+
+const pendingReminders = t => t.reminders.filter(r => !r.done).sort((a, b) => new Date(a.at) - new Date(b.at));
+function bellText(t) {
+  const p = pendingReminders(t);
+  return p.length ? `<span class="bell"> · 🔔 ${fmt(p[0].at)}${p.length > 1 ? ' 等' + p.length + '个提醒' : ''}</span>` : '';
+}
+
+function render() {
+  $('#btn-sort').textContent = '🔀 排序：' + (sortMode === 'input' ? '输入顺序' : '截止时间');
+  for (const q of QUADS) {
+    const list = tasks.filter(t => t.important === q.imp && t.urgent === q.urg)
+      .sort(sortMode === 'input' ? byInput : byDeadline);
+    const el = document.querySelector(`#q-${q.key} .list`);
+    el.innerHTML = list.length ? list.map(t => {
+      const r = remain(t.deadline);
+      return `<div class="card" data-id="${t.id}">
+        <input type="checkbox" data-id="${t.id}" onclick="event.stopPropagation()">
+        <div class="body"><div class="desc">${esc(t.desc)}</div>
+        <div class="meta">截止：${fmt(t.deadline)} · <span class="${r.over ? 'overdue' : 'left'}">${r.text}</span>
+        ${bellText(t)}</div></div></div>`;
+    }).join('') : '<div class="empty">暂无事项</div>';
+  }
+}
+
+function openModal(id) { $(id).classList.add('show'); }
+document.querySelectorAll('.modal-bg').forEach(bg => {
+  bg.addEventListener('click', e => { if (e.target === bg || e.target.hasAttribute('data-close')) bg.classList.remove('show'); });
+});
+
+// 增加 / 修改事项（共用一个表单）
+function updatePreview() { $('#remain-preview').textContent = '⏳ ' + remain($('#f-deadline').getValue()).text; }
+function openForm(t) {
+  editingId = t ? t.id : null;
+  $('#f-title').textContent = t ? '✏️ 修改事项' : '➕ 增加事项';
+  $('#f-save').textContent = t ? '保存修改' : '保存';
+  $('#f-desc').value = t ? t.desc : '';
+  $('#f-note').value = t ? t.note : '';
+  const def = new Date(); def.setDate(def.getDate() + 1); def.setMinutes(0);
+  makePicker($('#f-deadline'), t ? t.deadline : toStr(def), updatePreview);
+  document.querySelector(`input[name=imp][value="${t && !t.important ? 0 : 1}"]`).checked = true;
+  document.querySelector(`input[name=urg][value="${t && !t.urgent ? 0 : 1}"]`).checked = true;
+  $('#f-reminds').innerHTML = '';
+  if (t) t.reminders.forEach(r => addRemindRow(r));
+  updatePreview();
+  openModal('#m-add'); $('#f-desc').focus();
+}
+function addRemindRow(r) {
+  const row = document.createElement('div');
+  row.className = 'remind-row';
+  row.innerHTML = '<div class="dt"></div><button class="rm-del" type="button">删除</button>'
+    + (r && r.done ? '<span class="done">(已提醒)</span>' : '');
+  row.dataset.orig = r ? r.at : '';
+  row.dataset.done = r && r.done ? '1' : '';
+  let at = r && r.at;
+  if (!at) { // 新提醒默认：截止前 N 小时（第 N 个提醒），若已过去则为 1 小时后
+    const n = document.querySelectorAll('#f-reminds .remind-row').length + 1;
+    const d = new Date(new Date($('#f-deadline').getValue()) - n * 36e5);
+    at = toStr(d > Date.now() ? d : new Date(Date.now() + 36e5));
+  }
+  makePicker(row.querySelector('.dt'), at);
+  row.querySelector('.rm-del').onclick = () => row.remove();
+  $('#f-reminds').appendChild(row);
+}
+$('#btn-add').onclick = () => openForm(null);
+$('#f-add-remind').onclick = () => addRemindRow(null);
+$('#f-save').onclick = () => {
+  const desc = $('#f-desc').value.trim();
+  if (!desc) return alert('请输入事件描述');
+  const reminders = [...document.querySelectorAll('#f-reminds .remind-row')].map(row => {
+    const at = row.querySelector('.dt').getValue();
+    return { at, done: at === row.dataset.orig && row.dataset.done === '1' }; // 时间改动后重新提醒
+  }).filter((r, i, arr) => arr.findIndex(x => x.at === r.at) === i);
+  const data = {
+    desc,
+    deadline: $('#f-deadline').getValue(),
+    important: document.querySelector('input[name=imp]:checked').value === '1',
+    urgent: document.querySelector('input[name=urg]:checked').value === '1',
+    note: $('#f-note').value.trim(),
+    reminders,
+  };
+  const old = editingId && tasks.find(x => x.id === editingId);
+  if (old) Object.assign(old, data);
+  else tasks.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), createdAt: Date.now(), ...data });
+  save(); render(); $('#m-add').classList.remove('show');
+};
+
+// 修改事项：先选择要修改的事项
+$('#btn-edit').onclick = () => {
+  if (!tasks.length) return alert('当前没有事项');
+  $('#pick-list').innerHTML = todoGroups().flatMap(({ list }) => list).map(t =>
+    `<div class="pick-item" data-id="${t.id}"><b>${esc(t.desc)}</b><br><small>${t.important ? '重要' : '不重要'} · ${t.urgent ? '紧急' : '不紧急'} ｜ 截止 ${fmt(t.deadline)}</small></div>`).join('');
+  openModal('#m-pick');
+};
+$('#pick-list').onclick = e => {
+  const item = e.target.closest('.pick-item'); if (!item) return;
+  $('#m-pick').classList.remove('show');
+  openForm(tasks.find(x => x.id === item.dataset.id));
+};
+
+// 减少事项
+$('#btn-del').onclick = () => {
+  if (!tasks.length) return alert('当前没有事项');
+  document.body.classList.toggle('delete-mode');
+  $('#btn-del').classList.toggle('active');
+};
+function exitDelete() { document.body.classList.remove('delete-mode'); $('#btn-del').classList.remove('active'); }
+$('#del-cancel').onclick = exitDelete;
+$('#del-confirm').onclick = () => {
+  const ids = [...document.querySelectorAll('.card input:checked')].map(c => c.dataset.id);
+  if (!ids.length) return alert('请先勾选要删除的事项');
+  if (!confirm(`确定删除 ${ids.length} 个事项？`)) return;
+  tasks = tasks.filter(t => !ids.includes(t.id));
+  save(); exitDelete(); render();
+};
+
+// 详情
+$('#grid').addEventListener('click', e => {
+  const card = e.target.closest('.card'); if (!card) return;
+  if (document.body.classList.contains('delete-mode')) { const cb = card.querySelector('input'); cb.checked = !cb.checked; return; }
+  const t = tasks.find(x => x.id === card.dataset.id); currentId = t.id;
+  const r = remain(t.deadline);
+  $('#d-title').textContent = t.desc;
+  $('#d-body').innerHTML = `
+    <div class="detail-row"><b>分类：</b>${t.important ? '重要' : '不重要'} · ${t.urgent ? '紧急' : '不紧急'}</div>
+    <div class="detail-row"><b>截止时间：</b>${fmt(t.deadline)}（${r.text}）</div>
+    <div class="detail-row"><b>提醒：</b>${t.reminders.length ? [...t.reminders].sort((a, b) => new Date(a.at) - new Date(b.at))
+      .map(r => fmt(r.at) + (r.done ? '（已提醒）' : '')).join('<br>') : '未设置'}</div>
+    <div class="detail-row"><b>备注：</b>${t.note ? esc(t.note).replace(/\n/g, '<br>') : '无'}</div>`;
+  openModal('#m-detail');
+});
+$('#d-edit').onclick = () => {
+  const t = tasks.find(x => x.id === currentId); if (!t) return;
+  $('#m-detail').classList.remove('show');
+  openForm(t);
+};
+
+// To Do List
+function todoGroups() {
+  return QUADS.map(q => ({ q, list: tasks.filter(t => t.important === q.imp && t.urgent === q.urg).sort(byDeadline) }));
+}
+$('#btn-todo').onclick = () => {
+  $('#todo-content').innerHTML = tasks.length ? todoGroups().map(({ q, list }) =>
+    `<h4>${q.name}</h4>` + (list.length ? '<ol>' + list.map(t =>
+      `<li>${esc(t.desc)} —— 截止 ${fmt(t.deadline)}（${remain(t.deadline).text}）${t.note ? '<br><small>备注：' + esc(t.note) + '</small>' : ''}</li>`).join('') + '</ol>'
+      : '<div class="empty">无</div>')).join('')
+    : '<div class="empty">暂无事项</div>';
+  openModal('#m-todo');
+};
+$('#todo-copy').onclick = () => {
+  const text = 'To Do List\n' + todoGroups().map(({ q, list }) =>
+    `\n【${q.name}】\n` + (list.length ? list.map((t, i) => `${i + 1}. ${t.desc}  截止 ${fmt(t.deadline)}（${remain(t.deadline).text}）${t.note ? '  备注：' + t.note : ''}`).join('\n') : '  无')).join('\n');
+  navigator.clipboard.writeText(text).then(() => alert('已复制到剪贴板'), () => prompt('请手动复制：', text));
+};
+$('#todo-print').onclick = () => {
+  const w = window.open('', '_blank');
+  w.document.write('<meta charset="utf-8"><title>To Do List</title><h2>To Do List</h2>' + $('#todo-content').innerHTML);
+  w.document.close(); w.print();
+};
+
+// 排序 & 理论
+$('#btn-sort').onclick = () => { sortMode = sortMode === 'input' ? 'deadline' : 'input'; localStorage.setItem(SORT_KEY, sortMode); render(); };
+$('#btn-theory').onclick = () => openModal('#m-theory');
+
+// 提醒
+function beep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.35, 0.7].forEach(s => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = 880; o.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(0.3, ctx.currentTime + s);
+      o.start(ctx.currentTime + s); o.stop(ctx.currentTime + s + 0.2);
+    });
+  } catch (e) {}
+}
+function checkReminders() {
+  const due = [];
+  tasks.forEach(t => {
+    const hits = t.reminders.filter(r => !r.done && new Date(r.at) <= Date.now());
+    if (hits.length) { hits.forEach(r => r.done = true); due.push(t); }
+  });
+  if (!due.length) return;
+  save(); render();
+  beep();
+  due.forEach(t => {
+    const msg = `${t.desc}\n截止：${fmt(t.deadline)}（${remain(t.deadline).text}）`;
+    if ('Notification' in window && Notification.permission === 'granted') new Notification('🔔 事项提醒', { body: msg });
+  });
+  setTimeout(() => alert('🔔 事项提醒\n\n' + due.map(t => `${t.desc}\n截止：${fmt(t.deadline)}（${remain(t.deadline).text}）`).join('\n\n')), 50);
+}
+if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+
+render();
+checkReminders();
+setInterval(checkReminders, 15000);
+setInterval(() => { if (!document.body.classList.contains('delete-mode')) render(); }, 30000);
+</script>
+</body>
+</html>
